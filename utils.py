@@ -24,7 +24,11 @@ def segment_lung(img):
     img = img-mean
     img = img/std
     
+    print("img.shape: ")
+    print(img.shape)
     middle = img[100:400,100:400] 
+    print("middle.shape: ")
+    print(middle.shape)
     mean = np.mean(middle)  
     max = np.max(img)
     min = np.min(img)

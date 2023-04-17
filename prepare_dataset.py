@@ -14,6 +14,8 @@ from utils import is_dir_path,segment_lung
 from pylidc.utils import consensus
 from PIL import Image
 
+from sklearn.preprocessing import MinMaxScaler
+
 warnings.filterwarnings(action='ignore')
 
 # Read the configuration file generated from config_file_create.py
@@ -46,7 +48,7 @@ class MakeDataSet:
         self.mask_threshold = mask_threshold
         self.c_level = confidence_level
         self.padding = [(padding,padding),(padding,padding),(0,0)]
-        self.meta = pd.DataFrame(index=[],columns=['patient_id','nodule_no','slice_no','original_image','mask_image','malignancy','is_cancer','is_clean'])
+        self.meta = pd.DataFrame(index=[])
 
 
     def calculate_malignancy(self,nodule):
@@ -55,21 +57,45 @@ class MakeDataSet:
         # if it is below 3, we return a label False for non-cancer
         # if it is 3, we return ambiguous
         list_of_malignancy =[]
+        list_of_calcification = []
+        list_of_internal_structure = []
+        list_of_sphericity = []
+        list_of_margin = []
+        list_of_lobulation = []
+        list_of_spiculation = []
+        list_of_texture = []
+        list_of_subtlety = []
+
         for annotation in nodule:
             list_of_malignancy.append(annotation.malignancy)
+            list_of_calcification.append(annotation.calcification)
+            list_of_internal_structure.append(annotation.internalStructure)
+            list_of_sphericity.append(annotation.sphericity)
+            list_of_margin.append(annotation.margin)
+            list_of_lobulation.append(annotation.lobulation)
+            list_of_spiculation.append(annotation.spiculation)
+            list_of_texture.append(annotation.texture)
+            list_of_subtlety.append(annotation.subtlety)
 
         malignancy = median_high(list_of_malignancy)
-        if  malignancy > 3:
-            return malignancy,True
-        elif malignancy < 3:
-            return malignancy, False
-        else:
-            return malignancy, 'Ambiguous'
+        calcification = median_high(list_of_calcification)
+        internal_structure = median_high(list_of_internal_structure)
+        sphericity = median_high(list_of_sphericity)
+        margin = median_high(list_of_margin)
+        lobulation = median_high(list_of_lobulation)
+        spiculation = median_high(list_of_spiculation)
+        texture = median_high(list_of_texture)
+        subtlety = median_high(list_of_subtlety)
+
+        return malignancy, calcification, internal_structure, sphericity, margin, lobulation, spiculation, texture, subtlety
+
     def save_meta(self,meta_list):
         """Saves the information of nodule to csv file"""
-        tmp = pd.Series(meta_list,index=['patient_id','nodule_no','slice_no','original_image','mask_image','malignancy','is_cancer','is_clean'])
+        tmp = pd.Series(meta_list,index=['image_dir', 'malignancy', 'calcification', 'internal_structure', 'sphericity', 'margin', 'lobulation', 'spiculation', 'texture', 'subtlety'])
         self.meta = self.meta.append(tmp,ignore_index=True)
 
+    max_width = 0
+    max_height = 0
     def prepare_dataset(self):
         # This is to name each image and mask
         prefix = [str(x).zfill(3) for x in range(1000)]
@@ -91,11 +117,18 @@ class MakeDataSet:
         CLEAN_DIR_IMAGE = Path(self.clean_path_img)
         CLEAN_DIR_MASK = Path(self.clean_path_mask)
 
-
-
+        # count = 10
         for patient in tqdm(self.IDRI_list):
+            # count-=1
+            # if count == 0:
+            #     break
             pid = patient #LIDC-IDRI-0001~
             scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first()
+
+            if scan is None:
+                print(f"No scan found for patient ID: {pid}")
+                continue
+
             nodules_annotation = scan.cluster_annotations()
             vol = scan.to_volume()
             print("Patient ID: {} Dicom Shape: {} Number of Annotated Nodules: {}".format(pid,vol.shape,len(nodules_annotation)))
@@ -114,7 +147,7 @@ class MakeDataSet:
                     lung_np_array = vol[cbbox]
 
                     # We calculate the malignancy information
-                    malignancy, cancer_label = self.calculate_malignancy(nodule)
+                    malignancy, calcification, internal_structure, sphericity, margin, lobulation, spiculation, texture, subtlety = self.calculate_malignancy(nodule)
 
                     for nodule_slice in range(mask.shape[2]):
                         # This second for loop iterates over each single nodule.
@@ -122,45 +155,72 @@ class MakeDataSet:
                         if np.sum(mask[:,:,nodule_slice]) <= self.mask_threshold:
                             continue
                         # Segment Lung part only
-                        lung_segmented_np_array = segment_lung(lung_np_array[:,:,nodule_slice])
+                        # lung_segmented_np_array = segment_lung(lung_np_array[:,:,nodule_slice])
+                        lung_np_array_2d = lung_np_array[:,:,nodule_slice]
                         # I am not sure why but some values are stored as -0. <- this may result in datatype error in pytorch training # Not sure
-                        lung_segmented_np_array[lung_segmented_np_array==-0] =0
+                        # lung_segmented_np_array[lung_segmented_np_array==-0] =0
                         # This itereates through the slices of a single nodule
                         # Naming of each file: NI= Nodule Image, MA= Mask Original
                         nodule_name = "{}_NI{}_slice{}".format(pid[-4:],prefix[nodule_idx],prefix[nodule_slice])
                         mask_name = "{}_MA{}_slice{}".format(pid[-4:],prefix[nodule_idx],prefix[nodule_slice])
-                        meta_list = [pid[-4:],nodule_idx,prefix[nodule_slice],nodule_name,mask_name,malignancy,cancer_label,False]
+                        
+                        img_dir = "./"+str(patient_image_dir) + "/"+ nodule_name + ".png"
+                        meta_list = [img_dir, malignancy, calcification, internal_structure, sphericity, margin, lobulation, spiculation, texture, subtlety]
 
                         self.save_meta(meta_list)
-                        np.save(patient_image_dir / nodule_name,lung_segmented_np_array)
-                        np.save(patient_mask_dir / mask_name,mask[:,:,nodule_slice])
-            else:
-                print("Clean Dataset",pid)
-                patient_clean_dir_image = CLEAN_DIR_IMAGE / pid
-                patient_clean_dir_mask = CLEAN_DIR_MASK / pid
-                Path(patient_clean_dir_image).mkdir(parents=True, exist_ok=True)
-                Path(patient_clean_dir_mask).mkdir(parents=True, exist_ok=True)
-                #There are patients that don't have nodule at all. Meaning, its a clean dataset. We need to use this for validation
-                for slice in range(vol.shape[2]):
-                    if slice >50:
-                        break
-                    lung_segmented_np_array = segment_lung(vol[:,:,slice])
-                    lung_segmented_np_array[lung_segmented_np_array==-0] =0
-                    lung_mask = np.zeros_like(lung_segmented_np_array)
+                        # np.save(patient_image_dir / nodule_name,lung_segmented_np_array)
 
-                    #CN= CleanNodule, CM = CleanMask
-                    nodule_name = "{}/{}_CN001_slice{}".format(pid,pid[-4:],prefix[slice])
-                    mask_name = "{}/{}_CM001_slice{}".format(pid,pid[-4:],prefix[slice])
-                    meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0,False,True]
-                    self.save_meta(meta_list)
-                    np.save(patient_clean_dir_image / nodule_name, lung_segmented_np_array)
-                    np.save(patient_clean_dir_mask / mask_name, lung_mask)
+                        #apply min max normalization
+                        scaler = MinMaxScaler(feature_range=(0, 255))
+                        lung_np_array_2d = scaler.fit_transform(lung_np_array_2d)
+                        img = Image.fromarray(lung_np_array_2d.astype(np.uint8))
+                        
+                        if img.width > self.max_width:
+                            self.max_width = img.width
+                            print(self.max_width)
+                            print(self.max_height)
+                        
+                        if img.height > self.max_height:
+                            self.max_height = img.height
+                            print(self.max_width)
+                            print(self.max_height)
+                        
+                        
+                        img.save(patient_image_dir / f"{nodule_name}.png")
+                        
+
+                        # np.save(patient_mask_dir / mask_name,mask[:,:,nodule_slice])
+            else:
+                print("Clean entry ignored")
+                # print("Clean Dataset",pid)
+                # patient_clean_dir_image = CLEAN_DIR_IMAGE / pid
+                # patient_clean_dir_mask = CLEAN_DIR_MASK / pid
+                # Path(patient_clean_dir_image).mkdir(parents=True, exist_ok=True)
+                # Path(patient_clean_dir_mask).mkdir(parents=True, exist_ok=True)
+                # #There are patients that don't have nodule at all. Meaning, its a clean dataset. We need to use this for validation
+                # for slice in range(vol.shape[2]):
+                #     if slice >50:
+                #         break
+                #     lung_segmented_np_array = segment_lung(vol[:,:,slice])
+                #     lung_segmented_np_array[lung_segmented_np_array==-0] =0
+                #     lung_mask = np.zeros_like(lung_segmented_np_array)
+
+                #     #CN= CleanNodule, CM = CleanMask
+                #     nodule_name = "{}_CN001_slice{}".format(pid[-4:], prefix[slice])
+                #     mask_name = "{}_CM001_slice{}".format(pid[-4:], prefix[slice])
+                #     meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0, 0, 0, 0, 0, 0, 0, 0, 0, True]
+                #     self.save_meta(meta_list)
+                #     np.save(patient_clean_dir_image / nodule_name, lung_segmented_np_array)
+                #     np.save(patient_clean_dir_mask / mask_name, lung_mask)
 
 
 
         print("Saved Meta data")
+        print(self.meta.head())
+        print(self.meta_path)
         self.meta.to_csv(self.meta_path+'meta_info.csv',index=False)
-
+        print("Max Width: ",self.max_width)
+        print("Max Height: ",self.max_height)
 
 
 if __name__ == '__main__':
