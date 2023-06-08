@@ -192,26 +192,6 @@ class MakeDataSet:
                         # np.save(patient_mask_dir / mask_name,mask[:,:,nodule_slice])
             else:
                 print("Clean entry ignored")
-                # print("Clean Dataset",pid)
-                # patient_clean_dir_image = CLEAN_DIR_IMAGE / pid
-                # patient_clean_dir_mask = CLEAN_DIR_MASK / pid
-                # Path(patient_clean_dir_image).mkdir(parents=True, exist_ok=True)
-                # Path(patient_clean_dir_mask).mkdir(parents=True, exist_ok=True)
-                # #There are patients that don't have nodule at all. Meaning, its a clean dataset. We need to use this for validation
-                # for slice in range(vol.shape[2]):
-                #     if slice >50:
-                #         break
-                #     lung_segmented_np_array = segment_lung(vol[:,:,slice])
-                #     lung_segmented_np_array[lung_segmented_np_array==-0] =0
-                #     lung_mask = np.zeros_like(lung_segmented_np_array)
-
-                #     #CN= CleanNodule, CM = CleanMask
-                #     nodule_name = "{}_CN001_slice{}".format(pid[-4:], prefix[slice])
-                #     mask_name = "{}_CM001_slice{}".format(pid[-4:], prefix[slice])
-                #     meta_list = [pid[-4:],slice,prefix[slice],nodule_name,mask_name,0, 0, 0, 0, 0, 0, 0, 0, 0, True]
-                #     self.save_meta(meta_list)
-                #     np.save(patient_clean_dir_image / nodule_name, lung_segmented_np_array)
-                #     np.save(patient_clean_dir_mask / mask_name, lung_mask)
 
 
 
