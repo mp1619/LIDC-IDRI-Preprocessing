@@ -150,12 +150,24 @@ class MakeDataSet:
                     malignancy, calcification, internal_structure, sphericity, margin, lobulation, spiculation, texture, subtlety = self.calculate_malignancy(nodule)
 
                     for nodule_slice in range(mask.shape[2]):
+
+                        if mask.shape[2] > 4:
+                            #calculate the indices of the middle three slices  (or single middle)
+                            middle_slice = mask.shape[2]//2
+                            middle_3 = (mask.shape[2] >= 10)
+                            if middle_3 == True:
+                                middle_slice_indices = [middle_slice-1,middle_slice,middle_slice+1]
+                            else:
+                                middle_slice_indices = [middle_slice]
+
+                            if nodule_slice not in middle_slice_indices:
+                                continue
+
                         # This second for loop iterates over each single nodule.
                         # There are some mask sizes that are too small. These may hinder training.
                         if np.sum(mask[:,:,nodule_slice]) <= self.mask_threshold:
                             continue
-                        # Segment Lung part only
-                        # lung_segmented_np_array = segment_lung(lung_np_array[:,:,nodule_slice])
+                    
                         lung_np_array_2d = lung_np_array[:,:,nodule_slice]
                         # I am not sure why but some values are stored as -0. <- this may result in datatype error in pytorch training # Not sure
                         # lung_segmented_np_array[lung_segmented_np_array==-0] =0
